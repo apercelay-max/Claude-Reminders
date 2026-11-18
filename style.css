@@ -64,7 +64,7 @@ body.car-on{overflow:hidden}
 .car[data-state=listening] .car-btn{background:var(--rec);color:#fff;animation:pulse 1.4s ease-in-out infinite}
 .car[data-state=saved] .car-btn{background:var(--ok);color:#fff}
 .car[data-state=error] .car-btn{background:var(--err);color:#fff}
-.car-text{min-height:3.2em;margin:0;font-size:1.25rem;text-align:center;overflow-wrap:anywhere}
+.car-text{white-space:pre-line;min-height:3.2em;margin:0;font-size:1.25rem;text-align:center;overflow-wrap:anywhere}
 .car-undo{min-height:64px;font-size:1.2rem;font-weight:600;border-color:var(--accent)}
 .car-voice{display:flex;gap:8px;align-items:center;justify-content:center;font-size:.9rem;color:var(--muted);min-height:36px}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(.985);filter:brightness(1.12)}}

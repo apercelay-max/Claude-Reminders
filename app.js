@@ -226,13 +226,13 @@
     undo: $('car-undo'), close: $('car-close'), project: $('car-project'), voice: $('car-voice'), open: $('car-open'),
   };
   const VOICE_KEY = KEY + '.carvoice';
-  let carRec = null, carErr = '', carFinals = '', carInterim = '', carNote = null, undoTimer = null, wakeLock = null;
+  let carRec = null, carErr = '', carFinals = '', carInterim = '', carPrefix = '', carRestarts = 0, carNote = null, undoTimer = null, wakeLock = null;
 
   function carSet(state, icon, label, text = '') {
     car.root.dataset.state = state; car.icon.textContent = icon; car.label.textContent = label; car.text.textContent = text;
   }
   const carIdle = () => carSet('idle', '🎤', SR ? 'Appuyer pour parler' : 'Dictée indisponible',
-    SR ? '' : 'Ce navigateur ne gère pas la dictée vocale. Essayez Chrome (Android) ou Safari (iPhone).');
+    SR ? 'Dites : « projet », le nom du projet, « idée », puis votre idée.' : 'Ce navigateur ne gère pas la dictée vocale. Essayez Chrome (Android) ou Safari (iPhone).');
   const speak = msg => {
     if (!car.voice.checked || !('speechSynthesis' in window)) return;
     try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(msg); u.lang = 'fr-FR'; speechSynthesis.speak(u); } catch {}
@@ -270,9 +270,51 @@
     'audio-capture': 'Aucun micro détecté.',
   };
 
-  function startListening() {
+  // Dictée structurée : « projet <nom> idée <texte> ». Sans le mot « projet » au début,
+  // la phrase entière est enregistrée dans le projet choisi à l'écran.
+  const norm = t => String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  function lev(a, b) {
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    return d[a.length][b.length];
+  }
+  const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+
+  // Rapproche le nom dicté d'un projet existant (casse, accents, espaces, fautes légères) ; sinon, nouveau projet.
+  function matchProject(spoken, names) {
+    const q = norm(spoken);
+    const exact = names.find(n => norm(n) === q);
+    if (exact) return { name: exact, isNew: false };
+    const part = names.filter(n => { const k = norm(n); return q.length >= 3 && k && (k.includes(q) || q.includes(k)); });
+    if (part.length === 1) return { name: part[0], isNew: false };
+    const scored = names.map(n => [lev(q, norm(n)), n]).sort((x, y) => x[0] - y[0]);
+    const limit = Math.max(1, Math.floor(q.length * 0.25));
+    if (scored.length && scored[0][0] <= limit && (scored.length === 1 || scored[1][0] > scored[0][0])) return { name: scored[0][1], isNew: false };
+    return { name: cap(spoken.trim()), isNew: true };
+  }
+
+  function parseVoice(said, names) {
+    const head = /^\s*(?:le\s+)?projet[\s,.:;!-]+/i.exec(said);
+    if (!head) return { kind: 'plain', text: said };
+    const rest = said.slice(head[0].length);
+    const re = /(^|[\s,.:;!-])id[ée]es?(?=[\s,.:;!?-]|$)/gi;
+    const splits = [];
+    for (let m; (m = re.exec(rest));) {
+      const name = rest.slice(0, m.index).trim();
+      const text = rest.slice(m.index + m[0].length).replace(/^[\s,.:;!?-]+/, '').trim();
+      if (name) splits.push({ name, text });
+    }
+    if (!splits.length) return { kind: 'incomplete' };
+    // si le nom d'un projet existant contient « idée », on préfère la coupure qui le reconnaît
+    const pick = splits.find(sp => sp.text && names.some(n => norm(n) === norm(sp.name))) || splits.find(sp => sp.text);
+    return pick ? { kind: 'ok', name: pick.name, text: pick.text } : { kind: 'incomplete' };
+  }
+
+  function startListening(cont = false) {
     if (!SR) return;
-    clearTimeout(undoTimer); car.undo.hidden = true; carNote = null;
+    if (!cont) { clearTimeout(undoTimer); car.undo.hidden = true; carNote = null; carPrefix = ''; carRestarts = 0; }
     carErr = ''; carFinals = ''; carInterim = '';
     const r = new SR();
     r.lang = 'fr-FR'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
@@ -280,28 +322,49 @@
       let f = '', i = '';
       for (const res of ev.results) (res.isFinal ? (f += res[0].transcript + ' ') : (i += res[0].transcript + ' '));
       carFinals = f.trim(); carInterim = i.trim();
-      car.text.textContent = [carFinals, carInterim].filter(Boolean).join(' ');
+      car.text.textContent = [carPrefix, carFinals, carInterim].filter(Boolean).join(' ');
     };
     r.onerror = ev => { carErr = ev.error || 'error'; };
     r.onend = () => { carRec = null; finishListening(); };
     carRec = r;
-    try { r.start(); } catch { carRec = null; carSet('error', '⚠️', 'Réessayer', 'Impossible de démarrer le micro.'); return; }
-    carSet('listening', '⏺', 'Je vous écoute… (appuyer pour terminer)');
-    buzz(40);
+    try { r.start(); } catch { carRec = null; carSet('error', '⚠️', 'Appuyer pour réessayer', 'Impossible de démarrer le micro.'); return; }
+    carSet('listening', '⏺', cont ? 'Je vous écoute… (suite)' : 'Je vous écoute… (appuyer pour terminer)', carPrefix);
+    if (!cont) buzz(40);
   }
 
+  const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture', 'network'];
+  const HINT = 'Dites : « projet », le nom du projet, « idée », puis votre idée.';
+
   function finishListening() {
-    let said = [carFinals, carInterim].filter(Boolean).join(' ').trim();
+    if (car.root.hidden) return;
+    const heard = [carFinals, carInterim].filter(Boolean).join(' ').trim();
+    const said = [carPrefix, heard].filter(Boolean).join(' ').trim();
     if (!said) {
-      if (car.root.hidden) return;
       carSet('error', '⚠️', 'Appuyer pour réessayer', ERRORS[carErr] || 'La dictée n’a rien donné.');
       buzz([80, 60, 80]); return;
     }
-    said = said.charAt(0).toUpperCase() + said.slice(1);
-    carNote = addNote(said, car.project.value, { hold: Date.now() + UNDO_MS });
+    const names = [...car.project.options].map(o => o.value).filter(Boolean);
+    const parsed = parseVoice(said, names);
+    if (parsed.kind === 'incomplete') {
+      // pause après le nom du projet ou après « idée » : on relance l'écoute pour la suite
+      if (heard && carRestarts < 3 && !FATAL.includes(carErr)) { carPrefix = said; carRestarts++; startListening(true); return; }
+      carSet('error', '⚠️', 'Appuyer pour réessayer', (ERRORS[carErr] ? ERRORS[carErr] + ' ' : '') + HINT + '\nJ’ai entendu : ' + said);
+      buzz([80, 60, 80]); return;
+    }
+    if (parsed.kind === 'ok') {
+      const m = matchProject(parsed.name, names);
+      saveIdea(parsed.text, m.name, m.isNew);
+    } else saveIdea(parsed.text, car.project.value, false);
+  }
+
+  function saveIdea(raw, project, isNew) {
+    const text = cap(raw.trim());
+    carNote = addNote(text, project, { hold: Date.now() + UNDO_MS });
     scheduleSync(UNDO_MS + 300);
-    carSet('saved', '✓', 'Idée enregistrée', said);
-    car.undo.hidden = false; buzz(120); speak('Enregistré');
+    fillCarProjects();
+    carSet('saved', '✓', 'Idée enregistrée', (project ? `Projet : ${project}${isNew ? ' (nouveau)' : ''}\n` : '') + text);
+    car.undo.hidden = false; buzz(120);
+    speak(project ? `Enregistré dans ${project}${isNew ? ', nouveau projet' : ''}` : 'Enregistré');
     clearTimeout(undoTimer);
     undoTimer = setTimeout(() => { car.undo.hidden = true; carNote = null; carIdle(); }, UNDO_MS);
   }

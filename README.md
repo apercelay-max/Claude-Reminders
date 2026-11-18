@@ -26,10 +26,15 @@ si vous changez les fichiers, incrémentez `CACHE` dans `sw.js`.
 
 Bouton « 🚗 Mode voiture » en haut de l'appli, ou raccourci par appui long sur l'icône (Android), ou l'adresse `?mode=voiture`.
 
-1. Choisissez le projet avant de partir (le dernier utilisé est présélectionné).
-2. Un appui : l'écoute démarre. Parlez ; la fin de la phrase termine l'enregistrement (un second appui le termine plus tôt).
-3. L'idée est enregistrée, un « Enregistré » est prononcé (désactivable) et un bouton **Annuler** reste actif 8 secondes.
-   L'envoi vers la feuille Google n'a lieu qu'après ce délai.
+1. Un appui, puis dites : **« projet », le nom du projet, « idée », votre idée**.
+   Exemple : « projet Claude reminders, idée, ajouter une notification le dimanche ».
+2. Le nom est rapproché de vos projets existants (accents, casse, petites fautes ou nom partiel tolérés).
+   S'il ne correspond à aucun, un **nouveau projet** est créé et annoncé (« nouveau projet »).
+3. Si vous faites une pause (après le nom, ou après « idée »), l'écoute repart toute seule.
+4. Sans le mot « projet » en début de phrase, toute la phrase est enregistrée dans le projet choisi en haut de l'écran
+   (le dernier utilisé par défaut).
+5. L'idée est enregistrée, « Enregistré dans <projet> » est prononcé (désactivable) et un bouton **Annuler** reste actif
+   8 secondes. L'envoi vers la feuille Google n'a lieu qu'après ce délai.
 
 Limites : la dictée utilise le service de reconnaissance du navigateur, donc **elle demande une connexion internet**.
 Sur iPhone, elle peut ne pas fonctionner dans l'appli installée sur l'écran d'accueil ; ouvrez alors l'adresse dans Safari.
