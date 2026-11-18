@@ -7,6 +7,7 @@ Aucune dépendance, aucun build : HTML + CSS + JS.
 - Filtre par projet, recherche, marquer « fait », modifier, supprimer
 - Fonctionne hors ligne, installable sur l'écran d'accueil
 - Données stockées sur l'appareil (localStorage) ; export/import JSON et copie Markdown
+- Synchro optionnelle vers une feuille Google puis tri par Claude dans vos dépôts : voir `sync/README.md` et `TRIAGE.md`
 
 ## Essayer en local
 

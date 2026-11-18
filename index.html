@@ -35,6 +35,17 @@
     <ul id="list"></ul>
     <p id="empty" class="muted" hidden>Aucune idée pour l’instant. Notez la première ci-dessus.</p>
 
+    <details id="sync" class="sync">
+      <summary id="sync-summary">Synchro</summary>
+      <input id="sync-url" type="url" inputmode="url" placeholder="Adresse du script Google (…/exec)" aria-label="Adresse du script">
+      <input id="sync-secret" type="password" autocomplete="off" placeholder="Code secret" aria-label="Code secret">
+      <div class="row">
+        <button type="button" id="sync-save" class="ghost">Enregistrer</button>
+        <button type="button" id="sync-now" class="primary">Synchroniser</button>
+      </div>
+      <p id="sync-status" class="muted small"></p>
+    </details>
+
     <footer>
       <button type="button" id="copy" class="ghost">Copier (Markdown)</button>
       <button type="button" id="export" class="ghost">Exporter</button>
