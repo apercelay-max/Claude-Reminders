@@ -48,3 +48,24 @@ footer{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 8px}
 .sync input{width:100%;margin-top:10px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--bg)}
 .sync .row{margin-top:10px}
 .sync p{margin:10px 0 0}
+
+/* --- mode voiture --- */
+:root{--rec:#b3261e;--ok:#1e7a3c;--err:#5a5855}
+.car-open{width:100%;min-height:52px;margin-bottom:16px;font-weight:600;border-color:var(--accent)}
+body.car-on{overflow:hidden}
+.car{position:fixed;inset:0;z-index:20;background:var(--bg);display:flex;flex-direction:column;gap:12px;
+  padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left))}
+.car-top{display:flex;gap:12px;align-items:center;justify-content:space-between}
+.car-top select{flex:1;min-width:0;min-height:48px;padding:0 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);font-size:1rem}
+.car-btn{flex:1;min-height:0;width:100%;flex-direction:column;gap:12px;border:0;border-radius:32px;
+  background:var(--accent);color:var(--accent-text);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.car-icon{font-size:clamp(64px,22vw,120px);line-height:1}
+.car-label{font-size:clamp(1.4rem,6vw,2rem);font-weight:700;text-align:center;padding:0 16px}
+.car[data-state=listening] .car-btn{background:var(--rec);color:#fff;animation:pulse 1.4s ease-in-out infinite}
+.car[data-state=saved] .car-btn{background:var(--ok);color:#fff}
+.car[data-state=error] .car-btn{background:var(--err);color:#fff}
+.car-text{min-height:3.2em;margin:0;font-size:1.25rem;text-align:center;overflow-wrap:anywhere}
+.car-undo{min-height:64px;font-size:1.2rem;font-weight:600;border-color:var(--accent)}
+.car-voice{display:flex;gap:8px;align-items:center;justify-content:center;font-size:.9rem;color:var(--muted);min-height:36px}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(.985);filter:brightness(1.12)}}
+@media (prefers-reduced-motion:reduce){.car[data-state=listening] .car-btn{animation:none}}

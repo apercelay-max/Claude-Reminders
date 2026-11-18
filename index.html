@@ -18,6 +18,7 @@
       <h1>Idées Claude</h1>
       <span id="count" class="muted"></span>
     </header>
+    <button type="button" id="car-open" class="car-open">🚗 Mode voiture</button>
 
     <form id="form" autocomplete="off">
       <input id="project" list="projects" placeholder="Projet (ex. Claude reminders)" maxlength="60" aria-label="Projet">
@@ -53,6 +54,19 @@
     </footer>
     <p class="muted small">Les notes restent sur cet appareil (stockage du navigateur). Pensez à exporter de temps en temps.</p>
   </main>
+  <div id="car" class="car" data-state="idle" hidden>
+    <div class="car-top">
+      <button type="button" id="car-close" class="ghost">✕ Quitter</button>
+      <select id="car-project" aria-label="Projet"></select>
+    </div>
+    <button type="button" id="car-btn" class="car-btn">
+      <span id="car-icon" class="car-icon" aria-hidden="true">🎤</span>
+      <span id="car-label" class="car-label"></span>
+    </button>
+    <p id="car-text" class="car-text" role="status" aria-live="polite"></p>
+    <button type="button" id="car-undo" class="car-undo" hidden>↩ Annuler cette idée</button>
+    <label class="car-voice"><input type="checkbox" id="car-voice" checked> Réponse vocale « Enregistré »</label>
+  </div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="app.js"></script>
 </body>

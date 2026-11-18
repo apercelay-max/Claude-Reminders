@@ -97,17 +97,22 @@
   }
 
   // --- ajout ---
+  function addNote(text, project, extra = {}) {
+    const note = { id: uid(), text, project, createdAt: Date.now(), updatedAt: Date.now(), done: false, ...extra };
+    notes.push(note);
+    save();
+    try { localStorage.setItem(KEY + '.last', project); } catch {}
+    if (filter !== 'Tous' && filter !== project) filter = 'Tous';
+    render();
+    return note;
+  }
   els.form.addEventListener('submit', e => {
     e.preventDefault();
     const text = els.text.value.trim();
     if (!text) return;
-    const project = els.project.value.trim();
-    notes.push({ id: uid(), text, project, createdAt: Date.now(), updatedAt: Date.now(), done: false });
-    save();
+    addNote(text, els.project.value.trim());
     els.text.value = '';
-    try { localStorage.setItem(KEY + '.last', project); } catch {}
-    if (filter !== 'Tous' && filter !== project) filter = 'Tous';
-    render(); toast('Idée enregistrée'); els.text.focus();
+    toast('Idée enregistrée'); els.text.focus();
   });
   try { els.project.value = localStorage.getItem(KEY + '.last') || ''; } catch {}
   els.search.addEventListener('input', render);
@@ -165,7 +170,8 @@
   let cfg = { url: '', secret: '' };
   try { cfg = { ...cfg, ...JSON.parse(localStorage.getItem(SYNC_KEY) || '{}') }; } catch {}
   let syncing = false, syncTimer = null, lastError = '';
-  const pending = () => cfg.url ? notes.filter(n => !n.syncedAt || n.updatedAt > n.syncedAt) : [];
+  // `hold` : une idée dictée en mode voiture n'est pas envoyée tant que le délai d'annulation court.
+  const pending = () => cfg.url ? notes.filter(n => (!n.hold || n.hold <= Date.now()) && (!n.syncedAt || n.updatedAt > n.syncedAt)) : [];
 
   function renderSync() {
     const p = pending().length;
@@ -175,7 +181,7 @@
       : lastError ? `Dernier essai : ${lastError}` : p ? `${p} idée(s) en attente d’envoi.` : 'Toutes les idées sont envoyées.';
   }
 
-  function scheduleSync() { clearTimeout(syncTimer); syncTimer = setTimeout(() => sync(false), 800); }
+  function scheduleSync(delay = 800) { clearTimeout(syncTimer); syncTimer = setTimeout(() => sync(false), delay); }
 
   async function sync(manual) {
     if (!cfg.url) { if (manual) toast('Renseignez l’adresse du script'); renderSync(); return; }
@@ -213,6 +219,107 @@
   window.addEventListener('online', () => sync(false));
   document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(false); });
 
+  // --- mode voiture : un seul bouton, la voix est transcrite et l'idée déposée ---
+  const UNDO_MS = 8000;
+  const car = {
+    root: $('car'), btn: $('car-btn'), icon: $('car-icon'), label: $('car-label'), text: $('car-text'),
+    undo: $('car-undo'), close: $('car-close'), project: $('car-project'), voice: $('car-voice'), open: $('car-open'),
+  };
+  const VOICE_KEY = KEY + '.carvoice';
+  let carRec = null, carErr = '', carFinals = '', carInterim = '', carNote = null, undoTimer = null, wakeLock = null;
+
+  function carSet(state, icon, label, text = '') {
+    car.root.dataset.state = state; car.icon.textContent = icon; car.label.textContent = label; car.text.textContent = text;
+  }
+  const carIdle = () => carSet('idle', '🎤', SR ? 'Appuyer pour parler' : 'Dictée indisponible',
+    SR ? '' : 'Ce navigateur ne gère pas la dictée vocale. Essayez Chrome (Android) ou Safari (iPhone).');
+  const speak = msg => {
+    if (!car.voice.checked || !('speechSynthesis' in window)) return;
+    try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(msg); u.lang = 'fr-FR'; speechSynthesis.speak(u); } catch {}
+  };
+  const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+
+  async function takeWakeLock() { try { wakeLock = await navigator.wakeLock.request('screen'); } catch {} }
+  function dropWakeLock() { try { wakeLock && wakeLock.release(); } catch {} wakeLock = null; }
+
+  function fillCarProjects() {
+    let last = ''; try { last = localStorage.getItem(KEY + '.last') || ''; } catch {}
+    const names = [...new Set([...projectNames(), ...(last ? [last] : [])])].sort((a, b) => a.localeCompare(b, 'fr'));
+    car.project.replaceChildren(el('option', { value: '', textContent: 'Sans projet' }), ...names.map(n => el('option', { value: n, textContent: n })));
+    car.project.value = last;
+  }
+
+  function openCar() {
+    fillCarProjects();
+    try { car.voice.checked = localStorage.getItem(VOICE_KEY) !== '0'; } catch {}
+    car.root.hidden = false; document.body.classList.add('car-on');
+    carIdle(); takeWakeLock();
+  }
+  function closeCar() {
+    if (carRec) { carRec.onend = null; carRec.onerror = null; try { carRec.abort(); } catch {} carRec = null; }
+    clearTimeout(undoTimer); car.undo.hidden = true; carNote = null;
+    car.root.hidden = true; document.body.classList.remove('car-on');
+    dropWakeLock(); render(); renderSync(); scheduleSync(UNDO_MS + 300);
+  }
+
+  const ERRORS = {
+    'no-speech': 'Je n’ai rien entendu. Appuyez et réessayez.',
+    'not-allowed': 'Micro refusé : autorisez-le dans les réglages du navigateur.',
+    'service-not-allowed': 'Micro refusé : autorisez-le dans les réglages du navigateur.',
+    'network': 'Pas de connexion : la dictée a besoin d’internet.',
+    'audio-capture': 'Aucun micro détecté.',
+  };
+
+  function startListening() {
+    if (!SR) return;
+    clearTimeout(undoTimer); car.undo.hidden = true; carNote = null;
+    carErr = ''; carFinals = ''; carInterim = '';
+    const r = new SR();
+    r.lang = 'fr-FR'; r.interimResults = true; r.continuous = false; r.maxAlternatives = 1;
+    r.onresult = ev => {
+      let f = '', i = '';
+      for (const res of ev.results) (res.isFinal ? (f += res[0].transcript + ' ') : (i += res[0].transcript + ' '));
+      carFinals = f.trim(); carInterim = i.trim();
+      car.text.textContent = [carFinals, carInterim].filter(Boolean).join(' ');
+    };
+    r.onerror = ev => { carErr = ev.error || 'error'; };
+    r.onend = () => { carRec = null; finishListening(); };
+    carRec = r;
+    try { r.start(); } catch { carRec = null; carSet('error', '⚠️', 'Réessayer', 'Impossible de démarrer le micro.'); return; }
+    carSet('listening', '⏺', 'Je vous écoute… (appuyer pour terminer)');
+    buzz(40);
+  }
+
+  function finishListening() {
+    let said = [carFinals, carInterim].filter(Boolean).join(' ').trim();
+    if (!said) {
+      if (car.root.hidden) return;
+      carSet('error', '⚠️', 'Appuyer pour réessayer', ERRORS[carErr] || 'La dictée n’a rien donné.');
+      buzz([80, 60, 80]); return;
+    }
+    said = said.charAt(0).toUpperCase() + said.slice(1);
+    carNote = addNote(said, car.project.value, { hold: Date.now() + UNDO_MS });
+    scheduleSync(UNDO_MS + 300);
+    carSet('saved', '✓', 'Idée enregistrée', said);
+    car.undo.hidden = false; buzz(120); speak('Enregistré');
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(() => { car.undo.hidden = true; carNote = null; carIdle(); }, UNDO_MS);
+  }
+
+  car.btn.onclick = () => { if (carRec) { carRec.stop(); } else startListening(); };
+  car.undo.onclick = () => {
+    if (!carNote) return;
+    notes = notes.filter(n => n.id !== carNote.id); persist(); render(); renderSync();
+    clearTimeout(undoTimer); carNote = null; car.undo.hidden = true;
+    carSet('idle', '🎤', 'Annulée. Appuyer pour parler', ''); buzz(60);
+  };
+  car.close.onclick = closeCar;
+  car.open.onclick = openCar;
+  car.project.onchange = () => { try { localStorage.setItem(KEY + '.last', car.project.value); } catch {} };
+  car.voice.onchange = () => { try { localStorage.setItem(VOICE_KEY, car.voice.checked ? '1' : '0'); } catch {} };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !car.root.hidden) takeWakeLock(); });
+
   render(); renderSync(); scheduleSync();
+  if (/[?&]mode=voiture\b/.test(location.search)) openCar();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
